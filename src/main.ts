@@ -1230,7 +1230,7 @@ app.get(
       }
 
       let pd: PlayerDetail
-      const psds: PlayerScoreDetail[] = []
+      let psds: PlayerScoreDetail[];
       const tenantDB = await connectToTenantDB(viewer.tenantId)
       try {
         const error = await authorizePlayer(tenantDB, viewer.playerId)
@@ -1250,40 +1250,34 @@ app.get(
 
         const competitions = await tenantDB.all<CompetitionRow[]>('SELECT * FROM competition WHERE tenant_id = ? ORDER BY created_at ASC', viewer.tenantId)
 
-        const pss: PlayerScoreRow[] = []
-
         // player_scoreを読んでいるときに更新が走ると不整合が起こるのでロックを取得する
         const unlock = await flockByTenantID(viewer.tenantId)
+        let pss: PlayerScoreRow[] = [];
         try {
-          for (const comp of competitions) {
-            const ps = await tenantDB.get<PlayerScoreRow>(
+        const psResult = await Promise.all(competitions.map(comp => {
+            return tenantDB.get<PlayerScoreRow>(
               // 最後にCSVに登場したスコアを採用する = row_numが一番大きいもの
               'SELECT * FROM player_score WHERE tenant_id = ? AND competition_id = ? AND player_id = ? ORDER BY row_num DESC LIMIT 1',
               viewer.tenantId,
               comp.id,
               p.id
             )
-            if (!ps) {
-              // 行がない = スコアが記録されてない
-              continue
-            }
-
-            pss.push(ps)
-          }
-
-          for (const ps of pss) {
-            const comp = await retrieveCompetition(tenantDB, ps.competition_id)
-            if (!comp) {
-              throw new Error('error retrieveCompetition')
-            }
-            psds.push({
-              competition_title: comp?.title,
-              score: ps.score,
-            })
-          }
+          }));
+          pss = psResult.filter((ps): ps is PlayerScoreRow => ps !== undefined)
         } finally {
           unlock()
         }
+        const comps = await Promise.all(pss.map(ps => retrieveCompetition(tenantDB, ps.competition_id)));
+        psds = pss.map(ps => {
+          const comp = comps.find(comp => comp?.id === ps.competition_id);
+          if (comp === undefined) {
+            return;
+          }
+          return {
+            competition_title: comp.title,
+            score: ps.score,
+          }
+        }).filter((res): res is PlayerScoreDetail => res !== undefined)
       } finally {
         tenantDB.close()
       }
