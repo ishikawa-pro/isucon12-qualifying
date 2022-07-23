@@ -1063,6 +1063,7 @@ app.post(
             })
           }
 
+          tenantDB.run("begin transaction");
           await tenantDB.run(
             'DELETE FROM player_score WHERE tenant_id = ? AND competition_id = ?',
             viewer.tenantId,
@@ -1085,6 +1086,7 @@ app.post(
             })
           }))
           insertData.finalize();
+          tenantDB.run("commit");
         } finally {
           unlock()
         }
