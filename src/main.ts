@@ -84,7 +84,7 @@ async function createTenantDB(id: number): Promise<Error | undefined> {
   const p = tenantDBPath(id)
 
   try {
-    await exec(`sh -c "sqlite3 ${p} < ${tenantDBSchemaFilePath}"`)
+    await exec(`sh -xc "sqlite3 ${p} < ${tenantDBSchemaFilePath}"`)
   } catch (error: any) {
     return new Error(`failed to exec "sqlite3 ${p} < ${tenantDBSchemaFilePath}", out=${error.stderr}`)
   }
@@ -1063,27 +1063,30 @@ app.post(
             })
           }
 
+          tenantDB.run("begin transaction");
           await tenantDB.run(
             'DELETE FROM player_score WHERE tenant_id = ? AND competition_id = ?',
             viewer.tenantId,
             competitionId
           )
 
-          for (const row of playerScoreRows) {
-            await tenantDB.run(
-              'INSERT INTO player_score (id, tenant_id, player_id, competition_id, score, row_num, created_at, updated_at) VALUES ($id, $tenant_id, $player_id, $competition_id, $score, $row_num, $created_at, $updated_at)',
-              {
-                $id: row.id,
-                $tenant_id: row.tenant_id,
-                $player_id: row.player_id,
-                $competition_id: row.competition_id,
-                $score: row.score,
-                $row_num: row.row_num,
-                $created_at: row.created_at,
-                $updated_at: row.updated_at,
-              }
-            )
-          }
+          const insertData = await tenantDB.prepare(
+            'INSERT INTO player_score (id, tenant_id, player_id, competition_id, score, row_num, created_at, updated_at) VALUES ($id, $tenant_id, $player_id, $competition_id, $score, $row_num, $created_at, $updated_at)',
+          )
+          await Promise.all(playerScoreRows.map(row => {
+            return insertData.run({
+              $id: row.id,
+              $tenant_id: row.tenant_id,
+              $player_id: row.player_id,
+              $competition_id: row.competition_id,
+              $score: row.score,
+              $row_num: row.row_num,
+              $created_at: row.created_at,
+              $updated_at: row.updated_at,
+            })
+          }))
+          insertData.finalize();
+          tenantDB.run("commit");
         } finally {
           unlock()
         }
