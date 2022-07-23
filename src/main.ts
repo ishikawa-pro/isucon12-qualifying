@@ -13,7 +13,7 @@ import { open, Database } from 'sqlite'
 import { openSync, closeSync } from 'fs'
 import fsExt from 'fs-ext'
 import { parse } from 'csv-parse/sync'
-import uniqid from 'uniqid';
+import uniqid from './uniqid/index';
 
 import { useSqliteTraceHook } from './sqltrace'
 
